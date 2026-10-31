@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orbital Survival</title>
+<style>
+:root{
+  --hull:#0b1220; --panel:#131c2e; --panel-2:#1a2640; --line:#2a3a5c;
+  --text:#dbe6f5; --dim:#8196b8; --amber:#ffb347; --alert:#ff4d5e; --ok:#5ad1a8; --b:1;
+  --font:"Bahnschrift","DIN Alternate","Segoe UI",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--hull)}
+body{font-family:var(--font);color:var(--text)}
+
+/* the game fills the whole screen */
+.view{position:fixed;inset:0}
+.view svg{display:block;width:100%;height:100%;background:#070c17;filter:brightness(var(--b))}
+
+/* HUD panels sit on top of the game, kept small */
+.hud{position:fixed;z-index:3;background:rgba(19,28,46,.78);border:1px solid var(--line);border-radius:8px;padding:8px 10px;filter:brightness(var(--b))}
+#hud-tl{top:10px;left:10px;max-width:230px}
+#hud-tl h1{font-size:.95rem;margin:0 0 6px;font-weight:600;letter-spacing:.02em}
+#hud-tr{top:10px;right:10px;display:flex;gap:16px}
+#hud-bl{bottom:10px;left:10px;width:270px;padding:12px 14px}
+#hud-br{bottom:10px;right:10px;width:220px;padding:12px 14px}
+
+.hw{display:flex;flex-direction:column;align-items:flex-start;gap:4px;font-size:.72rem;color:var(--dim)}
+.hw button{font:inherit;font-size:.75rem;padding:4px 9px;border-radius:6px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);cursor:pointer}
+.hw.on button{border-color:var(--ok);color:var(--ok)}
+
+.stat{display:flex;flex-direction:column;align-items:flex-end;line-height:1.1}
+.stat small{color:var(--dim);font-size:.68rem}
+.stat b{font-size:1.3rem;font-variant-numeric:tabular-nums;font-weight:600}
+.stat.big b{font-size:1.7rem;color:var(--amber)}
+
+.read{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
+.read b{font-size:1.7rem;font-variant-numeric:tabular-nums;font-weight:600}
+.read span{color:var(--dim);font-size:.85rem}
+.gauge{position:relative;height:16px;background:#0b1220;border:1px solid var(--line);border-radius:5px;overflow:hidden}
+.gauge>i{position:absolute;left:0;top:0;height:100%;width:0;background:var(--ok)}
+.gauge>u{position:absolute;top:0;width:2px;height:100%;background:#ffffff66;text-decoration:none}
+.gauge>u.lim{background:var(--amber)}
+.note{color:var(--dim);font-size:.82rem;margin-top:6px;min-height:1.3em;line-height:1.25}
+.note.warn{color:var(--amber)} .note.bad{color:var(--alert)}
+#dial{display:block;width:100%;height:auto}
+
+#popups{position:fixed;left:50%;transform:translateX(-50%);top:72px;width:min(440px,calc(100vw - 24px));display:flex;flex-direction:column;gap:8px;pointer-events:none;z-index:6}
+.pop{background:rgba(14,22,38,.95);border:1px solid var(--line);border-left:4px solid var(--amber);border-radius:8px;padding:10px 12px;box-shadow:0 6px 20px #0009;animation:pin .18s ease-out}
+.pop b{display:block;font-size:1rem}
+.pop span{display:block;color:var(--dim);font-size:.88rem;margin-top:2px}
+.pop em{display:block;font-style:normal;font-size:2.1rem;font-weight:700;font-variant-numeric:tabular-nums;color:var(--alert);margin-top:4px}
+.pop em:empty{display:none}
+.pop.crit{border-color:var(--alert)}
+.pop.ok{border-left-color:var(--ok)}
+@keyframes pin{from{transform:translateY(-8px);opacity:0}to{transform:none;opacity:1}}
+#alarm{position:fixed;inset:0;pointer-events:none;z-index:4;opacity:0;
+  background:radial-gradient(ellipse at center,rgba(255,30,50,.2) 30%,rgba(255,20,40,.8) 100%)}
+.overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(5,9,18,.85);padding:20px;z-index:5;overflow:auto}
+.overlay[hidden]{display:none}
+.card{max-width:560px;width:100%;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:26px}
+.card h2{margin:0 0 8px;font-size:1.9rem}
+.card p{line-height:1.5;margin:0 0 14px}
+.card.lose h2{color:var(--alert)}
+.card table{width:100%;border-collapse:collapse;margin:0 0 4px;font-size:.9rem}
+.card td{padding:4px 0;border-bottom:1px solid var(--line);vertical-align:top}
+.card td:first-child{color:var(--dim);width:34%}
+.go{font:inherit;font-size:1rem;font-weight:600;padding:12px 20px;border:0;border-radius:8px;background:var(--amber);color:#1a1205;cursor:pointer}
+.go.alt{background:var(--panel-2);color:var(--text);border:1px solid var(--line)}
+.go:disabled{opacity:.4;cursor:not-allowed}
+.conn{display:flex;align-items:center;gap:12px;margin:0 0 12px;flex-wrap:wrap}
+.conn span{color:var(--dim);font-size:.85rem}
+.row2{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 12px}
+.msg{color:var(--amber);min-height:1.2em;font-size:.9rem;margin:0 0 10px}
+.go:focus-visible,.hw button:focus-visible{outline:2px solid var(--text);outline-offset:2px}
+@media (max-width:760px){
+  #hud-tl{max-width:150px}
+  #hud-bl{width:200px;padding:10px}
+  #hud-br{width:160px;padding:10px}
+  #hud-tr{gap:10px}
+  #popups{top:120px}
+}
+@media (prefers-reduced-motion:reduce){.pop{animation:none}}
+</style>
+</head>
+<body>
+<div class="view">
+  <svg id="viewport" viewBox="0 0 450 800" aria-label="Rocket view: asteroids fall from the top">
+    <g id="stars"></g>
+    <g id="rocks"></g>
+    <g id="ship">
+      <g id="ghost" opacity="0"></g>
+      <g id="panelG"></g>
+      <!-- satellite: antenna, dish, foil-wrapped body, thruster -->
+      <line x1="0" y1="-14" x2="0" y2="-34" stroke="#8196b8" stroke-width="2"/>
+      <circle cx="0" cy="-35" r="3" fill="#ffb347"/>
+      <path d="M-11,-14 Q0,-30 11,-14 Z" fill="#8196b8" stroke="#dbe6f5" stroke-width="1.5"/>
+      <polygon points="-5,14 5,14 3,20 -3,20" fill="#5c6f91" stroke="#8196b8" stroke-width="1.5"/>
+      <rect id="hull" x="-12" y="-14" width="24" height="28" rx="4" fill="#dbe6f5" stroke="#ffb347" stroke-width="2"/>
+      <line x1="-12" y1="-5" x2="12" y2="-5" stroke="#8196b8" stroke-width="1.5"/>
+      <line x1="-12" y1="5" x2="12" y2="5" stroke="#8196b8" stroke-width="1.5"/>
+      <rect x="-5" y="-2" width="10" height="4" rx="1" fill="#1f3a78"/>
+      <polygon id="flame" points="-3,20 3,20 0,32" fill="#ffb347"/>
+    </g>
+  </svg>
+</div>
+
+<div class="hud" id="hud-tl">
+  <h1>Orbital Survival</h1>
+  <div class="hw" id="hw"><button id="hw-btn">Connect controller</button><span id="hw-info">Controller not connected.</span></div>
+</div>
+
+<div class="hud" id="hud-tr">
+  <div class="stat"><small>Resolved</small><b id="resolved">0</b></div>
+  <div class="stat"><small>High score</small><b id="best">0</b></div>
+  <div class="stat big"><small>Score</small><b id="score">0</b></div>
+</div>
+
+<div class="hud" id="hud-bl">
+  <div class="read"><b id="p-val">65%</b><span>Power storage</span></div>
+  <div class="gauge"><i id="p-fill"></i><u style="left:50%"></u><u class="lim" style="left:80%"></u></div>
+  <div class="note" id="p-note">Draining slowly.</div>
+</div>
+
+<div class="hud" id="hud-br">
+  <div class="read" style="margin-bottom:2px"><b id="a-val" style="font-size:1.3rem">99°</b><span>Panel angle</span></div>
+  <svg id="dial" viewBox="0 0 240 150" aria-label="Panel angle dial, 0 to 180 degrees"></svg>
+  <div class="note" id="a-note">No adjustment needed.</div>
+</div>
+
+<div id="popups" aria-live="assertive"></div>
+<div id="alarm"></div>
+<div class="overlay" id="overlay"><div class="card" id="card"></div></div>
+
+<script>
+'use strict';
+const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+const lerp=(a,b,t)=>a+(b-a)*t;
+const $=id=>document.getElementById(id);
+const SVGNS='http://www.w3.org/2000/svg';
+
+/* Tuning. Light values are fractions (0..1). */
+const CONFIG={
+  lightBright:1000/1023, // raw sensor reading with the flashlight held close = 100%
+  calibSamples:25,       // readings averaged at connect to set the room-light baseline = 0%
+  lightOn:.15,           // light level where charging begins
+  smoothing:.35,         // analog smoothing for the controller, lower = smoother
+  startPower:65,
+  baseDrain:.8,          // % lost per second before the multiplier
+  drainMul:1.75,         // everything drains this much faster
+  chargeRate:16,         // % gained per second at full light
+  panelChargeMult:.4,    // charging strength while the panel angle is not fixed
+  safeLimit:80,          // charging above this overheats the hull
+  heatRate:3, coolRate:7,
+  coreCountdown:10,      // seconds to fix a core failure before the reactor goes critical
+  panelTolerance:8,      // degrees either side of the target angle
+  dimStart:75,           // cockpit starts dimming below this power %, pitch black at 0
+  pointsPerSecond:10
+};
+
+/* Difficulty over time t (seconds). */
+const eventPressure=t=>1-Math.exp(-t/40);                       // 0..1, drives how often events appear
+const speedMul=t=>1+1.8*(1-Math.exp(-t/90))+t/400;              // asteroid and background speed
+
+/* =========================================================
+   1. CONTROLS — the only thing the game engine reads.
+   Buttons: main / left / right. Analog (0..1): panel (pot), light (LDR).
+   ========================================================= */
+const Controls=(()=>{
+  const held={main:new Set(),left:new Set(),right:new Set()};
+  const analog={panel:.5,light:0};
+  const pressFns=[];
+  return{
+    setButton(name,isDown,src='ui'){
+      const s=held[name], was=s.size>0;
+      isDown?s.add(src):s.delete(src);
+      if(s.size>0&&!was) pressFns.forEach(f=>f(name));
+    },
+    setAnalog(name,v){analog[name]=clamp(v,0,1)},
+    isDown:n=>held[n].size>0,
+    get:n=>analog[n],
+    onPress:f=>pressFns.push(f)
+  };
+})();
+
+/* =========================================================
+   2. SIMULATED INPUT — keyboard only (used when no controller).
+   Space/Enter = main, A/D or arrows = left/right (one lane per press),
+   Q/E = panel angle, hold F = flashlight, C = recalibrate light.
+   ========================================================= */
+const Sim={flash:false};
+const KEYS={' ':'main','Enter':'main','a':'left','ArrowLeft':'left','d':'right','ArrowRight':'right'};
+addEventListener('keydown',e=>{
+  const k=e.key.length===1?e.key.toLowerCase():e.key;
+  if(k===' '||k.startsWith('Arrow')) e.preventDefault();
+  if(e.repeat&&!'qe'.includes(k)) return;
+  if(KEYS[k]) Controls.setButton(KEYS[k],true,'kbd');
+  else if(k==='q'&&!Hardware.connected) Controls.setAnalog('panel',Controls.get('panel')-.025);
+  else if(k==='e'&&!Hardware.connected) Controls.setAnalog('panel',Controls.get('panel')+.025);
+  else if(k==='f') Sim.flash=true;
+  else if(k==='c'&&Hardware.recalibrate) Hardware.recalibrate();
+});
+addEventListener('keyup',e=>{
+  const k=e.key.length===1?e.key.toLowerCase():e.key;
+  if(KEYS[k]) Controls.setButton(KEYS[k],false,'kbd');
+  if(k==='f') Sim.flash=false;
+});
+function simStep(dt){ if(Hardware.connected) return;
+  const l=Controls.get('light');
+  Controls.setAnalog('light',Sim.flash?Math.min(1,l+1.8*dt):Math.max(0,l-1.2*dt));
+}
+
+/* =========================================================
+   3. EMERGENCIES
+   core:  press the main button before the countdown ends.
+   panel: turn the panel to the target angle. Until fixed it drains extra power
+          and the flashlight charges much more weakly.
+   wave:  asteroids fall from the top in five lanes (0..4). Each press of
+          left or right moves the ship one lane. The ship stays where it is.
+   ========================================================= */
+const angle=()=>Controls.get('panel')*180;
+const TASKS={
+  core:{title:'Reactor failure',text:'Press the main button now.',drain:0,msg:'Reactor restarted.',hold:0,
+    check:ev=>ev.pressed.main},
+  panel:{title:'Adjust the panel angle',text:ev=>`Turn the solar panel to ${ev.data.target}°.`,drain:1,msg:'Panel angle corrected.',hold:500,
+    setup(ev){
+      const cur=angle(), opts=[];
+      for(let t=20;t<=160;t+=5) if(Math.abs(t-cur)>=40) opts.push(t);
+      ev.data.target=opts[Math.floor(Math.random()*opts.length)];
+    },
+    check:ev=>Math.abs(angle()-ev.data.target)<=CONFIG.panelTolerance}
+};
+
+/* A wave blocks 1 to 3 lanes, never three in a row, so a free lane is always one step away. */
+function wavePattern(d){
+  const maxK=2+(d>.35?1:0);
+  for(let tries=0;tries<30;tries++){
+    const k=1+Math.floor(Math.random()*maxK);
+    const set=new Set();
+    while(set.size<k) set.add(Math.floor(Math.random()*NL));
+    let ok=true;
+    for(let i=0;i<=NL-3;i++) if(set.has(i)&&set.has(i+1)&&set.has(i+2)) ok=false;
+    if(ok) return [...set];
+  }
+  return [2];
+}
+
+/* =========================================================
+   4. POPUPS — alerts shown in front of the game screen
+   ========================================================= */
+const popups=new Map();
+function popup(id,o){
+  let p=popups.get(id);
+  if(!p){
+    const el=document.createElement('div');
+    el.innerHTML='<b></b><span></span><em></em>';
+    $('popups').appendChild(el);
+    p={el}; popups.set(id,p);
+  }
+  p.el.className='pop '+(o.cls||'');
+  p.el.children[0].textContent=o.title||'';
+  p.el.children[1].textContent=o.text||'';
+  p.el.children[2].textContent=o.big||'';
+  if(o.ttl!=null) p.until=performance.now()+o.ttl; else if(p.until==null) p.until=Infinity;
+}
+function closePopup(id){const p=popups.get(id); if(p){p.el.remove();popups.delete(id)}}
+function clearPopups(){[...popups.keys()].forEach(closePopup)}
+
+/* =========================================================
+   5. GAME ENGINE — knows nothing about keyboards or Arduino.
+   ========================================================= */
+const NL=5, H=800, SHIP_Y=H-130;
+let W=450, LANES=[], HIT=40;
+const BEST_KEY='orbitalSurvivalBest';
+function loadBest(){try{return Number(localStorage.getItem(BEST_KEY))||0}catch(e){return 0}}
+function saveBest(v){try{localStorage.setItem(BEST_KEY,String(v))}catch(e){}}
+
+const G={state:'idle',mode:'keyboard',start:0,solved:0,points:0,best:loadBest(),speed:1,
+  events:[],rocks:[],nextSpawn:0,energy:CONFIG.startPower,heat:0,lane:2,shipX:0,
+  last:0,uid:0,charge:0,lowArmed:true,panelBad:false};
+
+function layout(){
+  const w=Math.max(1,innerWidth), h=Math.max(1,innerHeight);
+  W=H*w/h;
+  $('viewport').setAttribute('viewBox',`0 0 ${W.toFixed(1)} ${H}`);
+  const gap=clamp(W/5.6,56,120);
+  LANES=Array.from({length:NL},(_,i)=>W/2+(i-(NL-1)/2)*gap);
+  HIT=Math.min(40,gap*.46);
+  G.shipX=LANES[G.lane];
+  if(typeof stars!=='undefined') stars.forEach(s=>{s.x=Math.random()*W; s.el.setAttribute('cx',s.x)});
+}
+
+Controls.onPress(name=>{
+  if(G.state!=='running') return;
+  if(name==='left') G.lane=Math.max(0,G.lane-1);
+  else if(name==='right') G.lane=Math.min(NL-1,G.lane+1);
+  if(performance.now()-G.start<350) return;
+  G.events.forEach(ev=>{if(!ev.done) ev.pressed[name]=true});
+});
+function clearField(){
+  G.events=[]; G.rocks.forEach(r=>r.el.remove()); G.rocks=[]; clearPopups();
+}
+function startMission(mode){
+  if(mode==='controller'&&!Hardware.connected) return;
+  clearField();
+  const now=performance.now();
+  Object.assign(G,{state:'running',mode,start:now,solved:0,points:0,speed:1,nextSpawn:now+1500,
+    energy:CONFIG.startPower,heat:0,lane:2,lowArmed:true,panelBad:false});
+  G.shipX=LANES[G.lane];
+  $('overlay').hidden=true;
+  if(document.activeElement) document.activeElement.blur();
+}
+function spawn(now,t){
+  const d=eventPressure(t), sp=speedMul(t);
+  const active=G.events.filter(e=>!e.done);
+  if(now<G.nextSpawn||active.length>=1+Math.floor(d*3.4)) return;
+  const pool=['wave','wave','core','panel'];
+  let kind=pool[Math.floor(Math.random()*pool.length)];
+  if(kind!=='wave'&&active.some(e=>e.kind===kind)) kind='wave';
+  const ev={id:++G.uid,kind,at:now,done:false,pressed:{main:false,left:false,right:false},holdSince:null,data:{},rocks:[]};
+  if(kind==='wave'){
+    const T=Math.max(1400,4600/sp), arrive=now+T;
+    if(active.some(e=>e.kind==='wave'&&Math.abs(e.arrive-arrive)<1300)){G.nextSpawn=now+400;return}
+    ev.arrive=arrive;
+    const v=(SHIP_Y+40)/(T/1000);
+    wavePattern(d).forEach(l=>{
+      const el=document.createElementNS(SVGNS,'g');
+      el.innerHTML='<polygon points="-24,-8 -12,-24 8,-22 24,-8 22,12 6,24 -14,20 -24,6" fill="#6b5b4a" stroke="#a8927a" stroke-width="2"/><circle cx="-6" cy="-4" r="4" fill="#4d4034"/><circle cx="9" cy="9" r="3" fill="#4d4034"/>';
+      $('rocks').appendChild(el);
+      const r={lane:l,y:-40,v,rot:Math.random()*360,spin:(Math.random()-.5)*80,el};
+      ev.rocks.push(r); G.rocks.push(r);
+    });
+  }else if(kind==='core'){
+    ev.deadline=now+CONFIG.coreCountdown*1000;
+  }else{
+    const tk=TASKS.panel; tk.setup(ev);
+    popup('panel',{title:tk.title,text:tk.text(ev),cls:'',ttl:5000});   // one popup, shown once
+  }
+  G.events.push(ev);
+  G.nextSpawn=now+lerp(3000,700,d)*(.7+Math.random()*.6);
+}
+function resolve(ev,msg){
+  ev.done=true; G.solved++;
+  if(ev.kind==='core') closePopup('core');
+  if(ev.kind==='panel') closePopup('panel');
+  if(msg) popup('done',{title:msg,cls:'ok',ttl:1600});
+}
+function end(reason){
+  G.state='over';
+  clearPopups();
+  const survived=(performance.now()-G.start)/1000;
+  const pts=G.points;
+  let record=false;
+  if(pts>G.best){G.best=pts;record=true;saveBest(pts)}
+  $('card').className='card lose';
+  $('card').innerHTML=`<h2>Mission failed</h2>
+   <p>${reason}</p>
+   <table><tr><td>Score</td><td>${pts}${record?' &nbsp;(new high score)':''}</td></tr>
+   <tr><td>High score</td><td>${G.best}</td></tr>
+   <tr><td>Emergencies resolved</td><td>${G.solved}</td></tr>
+   <tr><td>Time survived</td><td>${survived.toFixed(1)} s</td></tr></table>
+   <div class="row2" style="margin-top:16px"><button class="go" id="again">Restart mission</button>
+   <button class="go alt" id="menu">Back to menu</button></div>`;
+  $('overlay').hidden=false;
+  $('again').addEventListener('click',()=>startMission(G.mode));
+  $('menu').addEventListener('click',()=>showStart());
+  $('again').focus();
+}
+function update(now,dt){
+  simStep(dt);
+  if(G.state!=='running') return;
+  const t=(now-G.start)/1000;
+  G.points=Math.floor(t*CONFIG.pointsPerSecond);
+  G.speed=speedMul(t);
+
+  // rocket glides to its lane (left/right presses change the lane)
+  G.shipX+=(LANES[G.lane]-G.shipX)*(1-Math.exp(-dt*14));
+
+  spawn(now,t);
+
+  // asteroids fall from the top
+  for(const r of G.rocks){
+    r.y+=r.v*dt; r.rot+=r.spin*dt;
+    if(Math.abs(r.y-SHIP_Y)<44&&Math.abs(G.shipX-LANES[r.lane])<HIT){end('The ship was hit by an asteroid.');return}
+  }
+  G.rocks=G.rocks.filter(r=>{if(r.y>H+60){r.el.remove();return false}return true});
+
+  // emergencies
+  let extraDrain=0, panelBad=false;
+  for(const ev of G.events){
+    if(ev.done) continue;
+    if(ev.kind==='wave'){
+      if(ev.rocks.every(r=>r.y>SHIP_Y+50)) resolve(ev,null);
+    }else if(ev.kind==='core'){
+      const rem=ev.deadline-now;
+      if(rem<=0){end('The reactor went critical before it was restarted.');return}
+      popup('core',{title:'Reactor failure',text:'Press the main button now.',big:(rem/1000).toFixed(1)+' s',cls:'crit'});
+      if(TASKS.core.check(ev)) resolve(ev,TASKS.core.msg);
+    }else{
+      const tk=TASKS.panel;
+      extraDrain+=tk.drain; panelBad=true;
+      if(tk.check(ev)){
+        if(ev.holdSince==null) ev.holdSince=now;
+        if(now-ev.holdSince>=tk.hold) resolve(ev,tk.msg);
+      }else ev.holdSince=null;
+    }
+  }
+  G.panelBad=panelBad;
+  G.events=G.events.filter(e=>!e.done);
+
+  // power and hull heat
+  const low=G.energy<50;
+  const drain=(CONFIG.baseDrain*(low?1.6+(50-G.energy)/50*.6:1)+extraDrain)*CONFIG.drainMul;
+  G.charge=CONFIG.chargeRate*clamp((Controls.get('light')-CONFIG.lightOn)/(1-CONFIG.lightOn),0,1)*(panelBad?CONFIG.panelChargeMult:1);
+  G.energy=clamp(G.energy+(G.charge-drain)*dt,0,100);
+  const overcharging=G.charge>.3&&G.energy>=CONFIG.safeLimit;
+  G.heat=clamp(G.heat+(overcharging?(CONFIG.heatRate+G.charge):-CONFIG.coolRate)*dt,0,100);
+
+  // alerts
+  if(G.energy<20&&G.lowArmed){
+    G.lowArmed=false;
+    popup('low',{title:'Energy low',text:'Power storage is below 20%. Shine a light on the solar panel.',cls:'crit',ttl:4500});
+  }else if(G.energy>30) G.lowArmed=true;
+  if(overcharging) popup('heat',{title:'Overcharging',text:`Hull heat ${Math.round(G.heat)}%. Turn the light away.`,cls:'crit',ttl:500});
+
+  if(G.energy<=0){end('Power storage ran out and the ship went dark. Shine a light on the solar panel to recharge.');return}
+  if(G.heat>=100){end('The hull overheated and the ship was cooked. Stop shining the light once power passes 80%.');return}
+}
+
+/* =========================================================
+   6. RENDERING
+   ========================================================= */
+const stars=[];
+for(let i=0;i<90;i++){
+  const c=document.createElementNS(SVGNS,'circle');
+  const s={el:c,x:0,y:Math.random()*H,v:20+Math.random()*70};
+  const sz=.3+Math.pow(Math.random(),4)*3.7;   // mostly tiny, big ones are rare
+  c.setAttribute('r',sz.toFixed(2)); c.setAttribute('fill','#dbe6f5');
+  c.setAttribute('opacity',Math.min(1,Math.random()*.5+.3+sz*.1).toFixed(2)); $('stars').appendChild(c); stars.push(s);
+}
+layout();
+addEventListener('resize',layout);
+const mix=(a,b,t)=>'#'+[0,2,4].map(i=>Math.round(lerp(parseInt(a.substr(1+i,2),16),parseInt(b.substr(1+i,2),16),t)).toString(16).padStart(2,'0')).join('');
+
+// solar panel attached to the ship. It rotates around the ship with the panel angle,
+// the amber end points the same way as the needle on the dial.
+$('panelG').innerHTML=`<rect id="pRect" x="-50" y="-5" width="100" height="10" rx="2" fill="#1f3a78" stroke="#5aa0ff" stroke-width="2"/>
+ <line x1="-25" y1="-5" x2="-25" y2="5" stroke="#5aa0ff" stroke-width="1.5"/>
+ <line x1="0" y1="-5" x2="0" y2="5" stroke="#5aa0ff" stroke-width="1.5"/>
+ <line x1="25" y1="-5" x2="25" y2="5" stroke="#5aa0ff" stroke-width="1.5"/>
+ <circle cx="50" cy="0" r="6" fill="#ffb347"/>`;
+$('ghost').innerHTML=`<rect x="-50" y="-5" width="100" height="10" rx="2" fill="none" stroke="#ffb347" stroke-width="2" stroke-dasharray="6 4"/>
+ <circle cx="50" cy="0" r="6" fill="none" stroke="#ffb347" stroke-width="2"/>`;
+
+// panel angle dial: 0 degrees at the left, 180 at the right
+const CX=120,CY=120,R=96;
+const pt=(a,r)=>{const th=Math.PI*(1-a/180);return[CX+r*Math.cos(th),CY-r*Math.sin(th)]};
+const arc=(a1,a2,r)=>{const[x1,y1]=pt(a1,r),[x2,y2]=pt(a2,r);return`M${x1.toFixed(1)} ${y1.toFixed(1)} A${r} ${r} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)}`};
+$('dial').innerHTML=`<path d="${arc(0,180,R)}" fill="none" stroke="#2a3a5c" stroke-width="14" stroke-linecap="round"/>
+ <path id="t-arc" fill="none" stroke="#ffb347" stroke-width="14" opacity="0"/>
+ ${[0,45,90,135,180].map(a=>{const p=pt(a,R-14),q=pt(a,R+12);return`<line x1="${p[0]}" y1="${p[1]}" x2="${q[0]}" y2="${q[1]}" stroke="#8196b8" stroke-width="1.5"/>`}).join('')}
+ <text x="24" y="144" fill="#8196b8" font-size="16" text-anchor="middle">0°</text>
+ <text x="216" y="144" fill="#8196b8" font-size="16" text-anchor="middle">180°</text>
+ <text x="120" y="14" fill="#8196b8" font-size="16" text-anchor="middle">90°</text>
+ <line id="needle" x1="${CX}" y1="${CY}" x2="${CX}" y2="${CY-R+18}" stroke="#dbe6f5" stroke-width="4" stroke-linecap="round"/>
+ <circle cx="${CX}" cy="${CY}" r="8" fill="#dbe6f5"/>`;
+const reduceMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function render(now,dt){
+  $('score').textContent=G.points;
+  $('best').textContent=Math.max(G.best,G.points);
+  $('resolved').textContent=G.solved;
+
+  // power meter
+  const e=G.energy;
+  $('p-val').textContent=Math.round(e)+'%';
+  $('p-fill').style.width=e+'%';
+  $('p-fill').style.background=e>CONFIG.safeLimit?'#ff9a3c':e<20?'#ff4d5e':e<50?'#ffb347':'#5ad1a8';
+  const pn=$('p-note');
+  if(G.charge>.3&&e>=CONFIG.safeLimit){pn.textContent='Above the 80% limit. Turn the light away.';pn.className='note bad'}
+  else if(G.charge>.3){pn.textContent=`Charging, +${G.charge.toFixed(1)}% per second.`+(G.panelBad?' Panel misaligned.':'');pn.className=G.panelBad?'note warn':'note'}
+  else if(G.panelBad){pn.textContent='Panel misaligned: faster drain, weaker charging.';pn.className='note warn'}
+  else if(e<50){pn.textContent='Power low. Shine light on the sensor.';pn.className='note warn'}
+  else{pn.textContent='Draining.';pn.className='note'}
+
+  // panel angle dial and the panel on the ship
+  const a=angle();
+  $('a-val').textContent=Math.round(a)+'°';
+  const[nx,ny]=pt(a,R-18);
+  $('needle').setAttribute('x2',nx); $('needle').setAttribute('y2',ny);
+  $('panelG').setAttribute('transform',`rotate(${(a-180).toFixed(1)})`);
+  const pe=G.state==='running'?G.events.find(x=>!x.done&&x.kind==='panel'):null;
+  const ta=$('t-arc');
+  if(pe){
+    const tg=pe.data.target;
+    ta.setAttribute('d',arc(Math.max(0,tg-CONFIG.panelTolerance),Math.min(180,tg+CONFIG.panelTolerance),R));
+    ta.setAttribute('opacity','1');
+    $('a-note').textContent=`Target ${tg}° (±${CONFIG.panelTolerance}°)`; $('a-note').className='note warn';
+    $('ghost').setAttribute('transform',`rotate(${tg-180})`); $('ghost').setAttribute('opacity','1');
+    const aligned=Math.abs(a-tg)<=CONFIG.panelTolerance;
+    $('pRect').setAttribute('stroke',aligned?'#5ad1a8':'#ffb347');
+  }else{
+    ta.setAttribute('opacity','0');$('a-note').textContent='No adjustment needed.';$('a-note').className='note';
+    $('ghost').setAttribute('opacity','0'); $('pRect').setAttribute('stroke','#5aa0ff');
+  }
+
+  // dim the cockpit from 75% power, fully black at 0% (alerts and cards stay bright)
+  const b=e>=CONFIG.dimStart?1:clamp(e/CONFIG.dimStart,0,1);
+  document.documentElement.style.setProperty('--b',b.toFixed(3));
+
+  // reactor alarm: red light modulating across the screen
+  const core=G.state==='running'&&G.events.some(x=>!x.done&&x.kind==='core');
+  $('alarm').style.opacity=core?(reduceMotion?.5:.25+.75*(.5+.5*Math.sin(now/1000*Math.PI*1.8))):0;
+
+  // popups expire
+  popups.forEach((p,id)=>{if(p.until!=null&&now>p.until) closePopup(id)});
+
+  // start card follows the controller connection
+  const cs=document.getElementById('cardStatus');
+  if(cs){
+    cs.textContent=$('hw-info').textContent; $('cardConnect').textContent=$('hw-btn').textContent;
+    $('start').disabled=!Hardware.connected;
+  }
+
+  // scene: background speeds up with the asteroids
+  stars.forEach(st=>{st.y+=st.v*G.speed*dt; if(st.y>H)st.y-=H; st.el.setAttribute('cy',st.y)});
+  $('ship').setAttribute('transform',`translate(${G.shipX} ${SHIP_Y})`);
+  $('hull').setAttribute('fill',mix('#dbe6f5','#ff6a4d',G.heat/100));
+  $('flame').setAttribute('opacity',(.6+.4*Math.sin(now/60)).toFixed(2));
+  G.rocks.forEach(r=>r.el.setAttribute('transform',`translate(${LANES[r.lane]} ${r.y}) rotate(${r.rot})`));
+}
+function frame(now){
+  const dt=Math.min(.1,(now-(G.last||now))/1000); G.last=now;
+  update(now,dt); render(now,dt);
+  requestAnimationFrame(frame);
+}
+
+/* =========================================================
+   7. HARDWARE — Arduino over Web Serial (Chrome or Edge).
+   Reads lines like "D,main,left,right,pot,ldr" and writes them into Controls.
+   ========================================================= */
+const Hardware=(()=>{
+  const api={connected:false};
+  const info=$('hw-info'), btn=$('hw-btn'), box=$('hw');
+  let port=null, reader=null, ema={pot:null,ldr:null};
+  let base=null, cN=0, cSum=0;   // room-light baseline (= 0%), set from the first readings after connecting
+  const smooth=(k,v)=>ema[k]=ema[k]==null?v:ema[k]+(v-ema[k])*CONFIG.smoothing;
+  function parse(line){
+    const p=line.trim().split(',');
+    if(p[0]!=='D'||p.length!==6) return;
+    const n=p.slice(1).map(Number);
+    if(n.some(Number.isNaN)) return;
+    ['main','left','right'].forEach((name,i)=>Controls.setButton(name,n[i]===1,'hw'));
+    const pot=smooth('pot',n[3]/1023), ldr=smooth('ldr',n[4]/1023);
+    Controls.setAnalog('panel',pot);
+    if(base==null){
+      cSum+=n[4]/1023; cN++;
+      if(cN>=CONFIG.calibSamples) base=cSum/cN;
+      Controls.setAnalog('light',0);
+      info.textContent='Controller connected. Measuring room light, keep the sensor unlit...';
+      return;
+    }
+    Controls.setAnalog('light',clamp((ldr-base)/(CONFIG.lightBright-base),0,1));
+    info.textContent=`Controller connected. Panel ${Math.round(pot*180)}°, light ${Math.round(Controls.get('light')*100)}%`;
+  }
+  function cleanup(){
+    api.connected=false; port=null; reader=null;
+    ['main','left','right'].forEach(n=>Controls.setButton(n,false,'hw'));
+    box.classList.remove('on'); btn.textContent='Connect controller';
+    info.textContent='Controller not connected.'; if(api.onLost) api.onLost();
+  }
+  async function readLoop(){
+    const dec=new TextDecoderStream();
+    const closed=port.readable.pipeTo(dec.writable).catch(()=>{});
+    reader=dec.readable.getReader();
+    let buf='';
+    try{
+      while(true){
+        const {value,done}=await reader.read();
+        if(done) break;
+        buf+=value;
+        let i; while((i=buf.indexOf('\n'))>=0){parse(buf.slice(0,i));buf=buf.slice(i+1)}
+      }
+    }catch(e){}
+    try{reader.releaseLock()}catch(e){}
+    await closed;
+    try{await port.close()}catch(e){}
+    cleanup();
+  }
+  async function connect(){
+    if(!('serial' in navigator)){info.textContent='Web Serial needs Chrome or Edge.';return}
+    try{
+      port=await navigator.serial.requestPort();
+      await port.open({baudRate:115200});
+    }catch(err){port=null;info.textContent='Could not open the port. Close the Arduino Serial Monitor and try again.';return}
+    api.connected=true; ema={pot:null,ldr:null}; api.recalibrate();
+    box.classList.add('on'); btn.textContent='Disconnect';
+    info.textContent='Controller connected. Waiting for data...';
+    readLoop();
+  }
+  api.recalibrate=()=>{base=null;cN=0;cSum=0};
+  btn.addEventListener('click',()=>{ if(api.connected){ if(reader) reader.cancel().catch(()=>{}); } else connect(); });
+  return api;
+})();
+
+/* =========================================================
+   8. START SCREEN
+   ========================================================= */
+function showStart(note){
+  clearField();
+  G.state='idle'; G.speed=1; G.points=0; G.solved=0; G.lane=2; G.shipX=LANES[2]; G.energy=CONFIG.startPower; G.heat=0; G.panelBad=false;
+  $('card').className='card';
+  $('card').innerHTML=`<h2>Orbital Survival</h2>
+ <p>Survive as long as you can. Your score climbs with time, but asteroids, emergencies and the background all speed up. Asteroids fall in five lanes: press left or right to move the rocket one lane. When the reactor fails, press the main button before the countdown ends. Turn the solar panel when told to (until it is fixed, power drains faster and charging is weaker), and keep power up by shining a light on it, but stop around 80% or the hull overheats. The screen dims below 75% power.</p>
+ <div class="conn"><button class="go alt" id="cardConnect">Connect controller</button><span id="cardStatus">Controller not connected.</span></div>
+ <div class="row2"><button class="go" id="start" disabled>Start mission</button><button class="go alt" id="kbd">Play without controller</button></div>
+ <p class="msg">${note||''}</p>
+ <table>
+  <tr><td>Main button</td><td>Pin 2, or Space</td></tr>
+  <tr><td>Move one lane</td><td>Pins 3 and 4, or A and D / arrows</td></tr>
+  <tr><td>Panel angle</td><td>Potentiometer, or Q and E</td></tr>
+  <tr><td>Solar power</td><td>Flashlight on the sensor, or hold F</td></tr>
+  <tr><td>Recalibrate light</td><td>Press C with the sensor unlit</td></tr>
+ </table>`;
+  $('overlay').hidden=false;
+  $('start').addEventListener('click',()=>startMission('controller'));
+  $('kbd').addEventListener('click',()=>startMission('keyboard'));
+  $('cardConnect').addEventListener('click',()=>$('hw-btn').click());
+  $('kbd').focus();
+}
+showStart();
+Hardware.onLost=()=>{
+  if(G.mode==='controller'&&G.state!=='idle') showStart('Controller disconnected. Reconnect it to fly again.');
+};
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
